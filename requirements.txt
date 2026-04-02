@@ -1,0 +1,14 @@
+# Core Machine Learning & JAX
+jax[cpu]
+equinox
+optax
+
+# Mathematics & Plotting
+numpy
+matplotlib
+
+# RL Environments
+gymnasium
+
+# EnergySim Simulator (Installed directly from GitHub)
+git+https://github.com/phierhager/EnergySim.git
