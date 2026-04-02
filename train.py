@@ -1,5 +1,12 @@
 import os
 import time
+import sys
+# Tell Python to look in the original repo for the 'examples' folder
+sys.path.append("/home/emmanuel-gendy/Documents/EnergySim")
+
+import os
+import time
+import jax
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -49,7 +56,7 @@ def train():
         orig_hp = sim_module.create_heat_pump
         sim_module.create_heat_pump = lambda cfg, n: orig_hp(cfg, n_rooms)
 
-    dataset = SimulationDataset(file_path="examples/sample_data.csv", dt_seconds=900)
+    dataset = SimulationDataset(file_path="/home/emmanuel-gendy/Documents/EnergySim/examples/sample_data.csv", dt_seconds=900)
     sim = JAXSimulator(
         dt_seconds=900, t_config=t_config, r_config=RewardConfig(price_weight=1.0, comfort_weight=5.0),
         b_config=BatteryConfig(), hp_config=HeatPumpConfig(), ac_config=AirConditionerConfig(), 
