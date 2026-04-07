@@ -25,8 +25,11 @@ def create_rollout_function(env, num_envs, rollout_steps, extract_obs_fn, map_ac
             # Extract Observations
             t = env_state.time_idx[0]
             exo_batch = jax.tree.map(lambda x: x[t], env.shared_exo_data)
-            obs = jax.vmap(extract_obs_fn, in_axes=(0, None))(env_state.sim.state, exo_batch)
-            
+            obs = jax.vmap(extract_obs_fn, in_axes=(0, None, None))(
+                env_state.sim.state, 
+                exo_batch, 
+                room_indices # <-- Ensure this variable is defined or pulled from the environment config!
+)            
             # Ask Policy
             mean, log_std, value = jax.vmap(policy)(obs)
             std = jnp.exp(log_std)
