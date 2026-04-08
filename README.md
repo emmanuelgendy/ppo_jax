@@ -13,6 +13,16 @@ To keep the reinforcement learning logic transparent and modular, the project is
 * **`loss.py`**: Contains the mathematics for Generalized Advantage Estimation (GAE) and the PPO Clipped Surrogate Objective.
 * **`train.py`**: The main execution engine. Ties the components together, compiles the training step, and uses Optax for network updates.
 
+## Technical Notes & JAX Idioms
+
+Building reinforcement learning algorithms in pure JAX requires specific architectural patterns to satisfy the compiler's strict linear algebra and memory rules. If you are modifying this code, keep the following in mind:
+
+* **The Tensor Hierarchy:** This project uses an "Anakin-style" vectorization pattern. Memory buffers and trajectories are strictly structured as 2D matrices of shape `(Time, Environments)`. 
+* **Nested Vectorization:** To evaluate a batch of historical memories `(Time, Env, Features)` through the policy network, we utilize nested vectorization (`jax.vmap(jax.vmap(policy))`). This beautifully maps over the Time dimension, and then over the Environment dimension, feeding the exact 1D feature vector the linear layers expect while computing the entire batch simultaneously.
+* **Partial Application for Static Variables:** The `jax.lax.scan` loop used for environment rollouts only accepts dynamic carry states and sequence inputs. To pass static configuration variables (like `room_indices`) into the vectorized observation extractor, we use partial function application (Lambda wrappers) in `train.py` before compiling.
+* **Equinox PyTrees:** In `networks.py`, activation functions (like `jax.nn.tanh`) must be applied directly in the `__call__` forward pass, rather than stored as class attributes in `__init__`. This prevents the JAX compiler from attempting (and failing) to flatten functions into tensor arrays during gradient tracing.
+
+
 ## Getting Started
 
 ### 1. Clone the Repository
