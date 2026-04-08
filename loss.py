@@ -11,7 +11,7 @@ def calculate_gae(transitions, last_val, gamma=0.99, gae_lambda=0.95):
     """
     # 1. Calculate the raw difference between what happened and what was expected
     
-    # ✅ FIX: Reshape last_val to act as a single "timestep" row, 
+    # FIX: Reshape last_val to act as a single "timestep" row, 
     # then concatenate it cleanly along the Time axis (axis=0).
     last_val_reshaped = last_val.reshape(1, -1) 
     next_values = jnp.concatenate([transitions.value[1:], last_val_reshaped], axis=0)
