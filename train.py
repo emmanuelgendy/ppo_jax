@@ -50,6 +50,9 @@ def train():
     print("--- 1. Setting up Environment ---")
     t_config = create_2_room_house()
     n_rooms = len(t_config.room_air_indices)
+    
+    # ✅ 1. Extract the room indices into a JAX array immediately
+    room_indices = jnp.array(t_config.room_air_indices)
 
     # Patch for Heat Pump dimension matching
     if hasattr(sim_module, "create_heat_pump"):
@@ -80,12 +83,18 @@ def train():
     # Reset environment
     env_state = env.reset(env_key)
     
-    # Create the compiled rollout function
-    collect_rollout = create_rollout_function(env, NUM_ENVS, ROLLOUT_STEPS, extract_obs, lambda a, n: map_actions(a, n, n_rooms))
+    # ✅ 2. Wrap extract_obs in a lambda that includes room_indices
+    bound_extract_obs = lambda state, exo: extract_obs(state, exo, room_indices)
+    
+    # Pass the wrapped function into the rollout creator
+    collect_rollout = create_rollout_function(
+        env, NUM_ENVS, ROLLOUT_STEPS, 
+        bound_extract_obs, # <-- Passes the 2-argument version
+        lambda a, n: map_actions(a, n, n_rooms)
+    )
 
     print("--- 3. Compiling the Training Loop ---")
     
-    # THE MAGIC DECORATOR: This tells JAX to compile the entire function below into C++
     @eqx.filter_jit
     def update_step(policy, env_state, opt_state, key):
         # A. Collect Memories
@@ -94,7 +103,9 @@ def train():
         # B. Ask Critic for the value of the final state (needed for GAE)
         t = next_env_state.time_idx[0]
         exo_batch = jax.tree.map(lambda x: x[t], env.shared_exo_data)
-        final_obs = jax.vmap(extract_obs, in_axes=(0, None))(next_env_state.sim.state, exo_batch)
+        
+        # ✅ 3. Use the wrapped function here as well
+        final_obs = jax.vmap(bound_extract_obs, in_axes=(0, None))(next_env_state.sim.state, exo_batch)
         _, _, last_val = jax.vmap(policy)(final_obs)
         
         # C. Calculate Advantages
@@ -115,7 +126,6 @@ def train():
         return new_policy, next_env_state, new_opt_state, next_key, metrics, loss
 
     print("--- 4. Starting Training ---")
-    # We run this in a standard Python loop so we can print the progress
     for epoch in range(EPOCHS):
         start_time = time.time()
         
@@ -133,6 +143,6 @@ def train():
     print("--- 5. Saving Model ---")
     eqx.tree_serialise_leaves("jax_ppo_model.eqx", policy)
     print("✨ Model saved to jax_ppo_model.eqx")
-
+    
 if __name__ == "__main__":
     train()

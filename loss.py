@@ -1,3 +1,5 @@
+from email import policy
+
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -8,8 +10,11 @@ def calculate_gae(transitions, last_val, gamma=0.99, gae_lambda=0.95):
     Calculates how much BETTER an action was compared to what the Critic expected.
     """
     # 1. Calculate the raw difference between what happened and what was expected
-    # JAX trick: we append the 'last_val' to the end of the values array
-    next_values = jnp.append(transitions.value[1:], last_val)
+    
+    # ✅ FIX: Reshape last_val to act as a single "timestep" row, 
+    # then concatenate it cleanly along the Time axis (axis=0).
+    last_val_reshaped = last_val.reshape(1, -1) 
+    next_values = jnp.concatenate([transitions.value[1:], last_val_reshaped], axis=0)
     
     # Delta = Immediate Reward + (Discounted Next Value) - Current Value Guess
     deltas = transitions.reward + gamma * next_values * (1.0 - transitions.done) - transitions.value
@@ -23,7 +28,8 @@ def calculate_gae(transitions, last_val, gamma=0.99, gae_lambda=0.95):
         return gae, gae
     
     # Run the accumulation backwards
-    _, advantages = jax.lax.scan(scan_fn, 0.0, (deltas, transitions.done), reverse=True)
+    initial_gae = jnp.zeros(deltas.shape[1])
+    _, advantages = jax.lax.scan(scan_fn, initial_gae, (deltas, transitions.done), reverse=True)
     
     # 3. The Target Return is what the Critic *should* have guessed
     returns = advantages + transitions.value
@@ -39,7 +45,8 @@ def ppo_loss(policy, transitions, advantages, returns, clip_ratio=0.2, vf_coef=0
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
     # 1. Ask the CURRENT policy what it thinks of the OLD observations
-    mean, log_std, values = jax.vmap(policy)(transitions.obs)
+    batch_policy = jax.vmap(jax.vmap(policy))
+    mean, log_std, values = batch_policy(transitions.obs)
     std = jnp.exp(log_std)
     
     # Calculate the probability of the old actions under the NEW policy
