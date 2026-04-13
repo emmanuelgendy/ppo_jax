@@ -2,97 +2,72 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import gymnasium as gym
+from stable_baselines3.common.vec_env import VecEnv
 
-class EnergySimGymWrapper(gym.vector.VectorEnv):
+class EnergySimGymWrapper(VecEnv):
     """
-    A hardware-bridging wrapper that translates between PyTorch/NumPy (CPU) 
-    and EnergySim/JAX (CPU/GPU).
+    A hardware-bridging wrapper that perfectly mimics Stable-Baselines3's native 
+    vectorized environment structure, bypassing Gymnasium's VectorEnv conflicts.
     """
     def __init__(self, jax_env, num_envs, obs_dim, action_dim, extract_obs_fn, map_actions_fn):
-        # 1. Initialize the Standard VectorEnv Base
         self.jax_env = jax_env
-        self.num_envs = num_envs
         self.extract_obs_fn = extract_obs_fn
         self.map_actions_fn = map_actions_fn
         
-        # 2. Define the mathematical bounds of your MDP
-        # Standard PPO outputs actions in the continuous range [-1.0, 1.0]
-        action_space = gym.spaces.Box(
-            low=-1.0, high=1.0, shape=(action_dim,), dtype=np.float32
-        )
-        
-        # Observations can theoretically be any float (temperatures, weather)
-        observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
-        )
+        # SB3's VecEnv expects the spaces of a SINGLE environment. 
+        # It natively infers the batch dimension from 'num_envs'
+        observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
+        action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dim,), dtype=np.float32)
         
         super().__init__(num_envs, observation_space, action_space)
         
-        # Internal state tracking for JAX
+        # Internal state tracking
         self._env_state = None
         self._key = jax.random.PRNGKey(42)
+        self._actions = None
 
-    def reset(self, *, seed=None, options=None):
-        """
-        Resets the environment to the initial state distribution.
-        """
-        if seed is not None:
-            self._key = jax.random.PRNGKey(seed)
-            
+    def reset(self):
+        """SB3 VecEnv reset returns ONLY the observation array."""
         self._key, reset_key = jax.random.split(self._key)
-        
-        # JAX physics step
         self._env_state = self.jax_env.reset(reset_key)
         
-        # Extract observations
         t = self._env_state.time_idx[0]
         exo_batch = jax.tree.map(lambda x: x[t], self.jax_env.shared_exo_data)
-        
         jax_obs = jax.vmap(self.extract_obs_fn, in_axes=(0, None))(
             self._env_state.sim.state, exo_batch
         )
         
-        # Hardware Bridge: Convert JAX array -> NumPy array
-        np_obs = np.array(jax_obs)
-        infos = {} # Gymnasium expects a dictionary of extra info
-        
-        return np_obs, infos
+        return np.array(jax_obs)
 
-    def step(self, actions):
-        """
-        Takes a NumPy action batch, steps the JAX physics, and returns NumPy arrays.
-        """
-        # Hardware Bridge: Convert NumPy array -> JAX array
-        jax_actions = jnp.array(actions)
-        
-        # Map bounded [-1, 1] actions to physical watts/setpoints
+    def step_async(self, actions):
+        """SB3 splits step into async and wait for multiprocessing. We just cache the actions."""
+        self._actions = actions
+
+    def step_wait(self):
+        """Executes the JAX physics and returns obs, reward, done, info."""
+        jax_actions = jnp.array(self._actions)
         phys_actions = self.map_actions_fn(jax_actions, self.num_envs)
         
-        # Step the physics
         self._env_state, jax_reward, jax_done, _ = self.jax_env.step(self._env_state, phys_actions)
         
-        # Extract the new observations
         t = self._env_state.time_idx[0]
         exo_batch = jax.tree.map(lambda x: x[t], self.jax_env.shared_exo_data)
         jax_next_obs = jax.vmap(self.extract_obs_fn, in_axes=(0, None))(
             self._env_state.sim.state, exo_batch
         )
         
-        # Hardware Bridge: Convert back to NumPy
         np_obs = np.array(jax_next_obs)
         np_reward = np.array(jax_reward)
         np_done = np.array(jax_done, dtype=bool)
         
-        # Gymnasium Vector API separates done into 'terminated' (physics ended) 
-        # and 'truncated' (time limit reached). We can mirror them for simple MDPs.
-        terminations = np_done
-        truncations = np.zeros_like(np_done, dtype=bool) 
-        infos = {}
+        # SB3 requires a list of dicts for infos (one for each environment in the batch)
+        infos = [{} for _ in range(self.num_envs)]
         
-        # --- The Auto-Reset Requirement ---
-        # If an environment finishes an episode, the standard RL loop expects it 
-        # to immediately reset so no time is wasted. JAX VectorizedEnvs usually 
-        # handle this internally inside the `step` function. If EnergySim does 
-        # not auto-reset, you must catch `np_done` here and overwrite the state.
-        
-        return np_obs, np_reward, terminations, truncations, infos
+        return np_obs, np_reward, np_done, infos
+
+    # --- Dummy methods required by SB3's VecEnv Abstract Base Class ---
+    def close(self): pass
+    def get_attr(self, attr_name, indices=None): return [None] * self.num_envs
+    def set_attr(self, attr_name, value, indices=None): pass
+    def env_method(self, method_name, *method_args, indices=None, **method_kwargs): return [None] * self.num_envs
+    def env_is_wrapped(self, wrapper_class, indices=None): return [False] * self.num_envs

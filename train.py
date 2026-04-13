@@ -35,7 +35,7 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 # --- HYPERPARAMETERS ---
 NUM_ENVS = 2048
 ROLLOUT_STEPS = 64
-EPOCHS = 200
+EPOCHS = 2
 LEARNING_RATE = 3e-4
 
 def map_actions(norm_actions, n_envs, n_rooms):
@@ -104,7 +104,7 @@ def train():
         t = next_env_state.time_idx[0]
         exo_batch = jax.tree.map(lambda x: x[t], env.shared_exo_data)
         
-        # ✅ 3. Use the wrapped function here as well
+        # 3. Use the wrapped function here as well
         final_obs = jax.vmap(bound_extract_obs, in_axes=(0, None))(next_env_state.sim.state, exo_batch)
         _, _, last_val = jax.vmap(policy)(final_obs)
         
@@ -142,7 +142,7 @@ def train():
 
     print("--- 5. Saving Model ---")
     eqx.tree_serialise_leaves("jax_ppo_model.eqx", policy)
-    print("✨ Model saved to jax_ppo_model.eqx")
+print("Model saved to jax_ppo_model.eqx")
 
 if __name__ == "__main__":
     train()
