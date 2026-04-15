@@ -25,7 +25,7 @@ from energysim.rl.helpers import extract_obs
 from examples.build_my_house import create_2_room_house
 import energysim.sim.simulator as sim_module
 
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+# os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 NUM_ENVS = 2048
 ROLLOUT_STEPS = 64
