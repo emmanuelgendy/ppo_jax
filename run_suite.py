@@ -11,11 +11,15 @@ def run_command(command, description):
         sys.exit(1)
 
 if __name__ == "__main__":
-    print("Welcome to the JAX vs PyTorch PPO Benchmarking Suite.")
+    print("Welcome to the JAX vs PyTorch PPO & SAC Benchmarking Suite.")
     
     run_command("train.py", "Native JAX PPO Engine")
-    run_command("benchmark_cleanrl.py", "CleanRL PyTorch Engine")
-    run_command("benchmark_sb3.py", "Stable-Baselines3 PyTorch Engine")
+    run_command("benchmark_cleanrl.py", "CleanRL PPO Engine")
+    run_command("benchmark_sb3.py", "Stable-Baselines3 PPO Engine")
+    run_command("benchmark_sb3_sac.py", "Stable-Baselines3 SAC Engine")
     run_command("plot_benchmark.py", "Generating Visualizations")
     
     print("\n🎉 Benchmark Suite Complete! Open 'benchmark_results.png' to view the results.")
+
+
+#/home/emmanuel-gendy/Documents/EnergySim/src/energysim/core/data

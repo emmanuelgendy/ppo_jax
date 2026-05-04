@@ -8,19 +8,20 @@ def generate_plots():
         jax_data = pd.read_csv("jax_metrics.csv")
         sb3_data = pd.read_csv("./sb3_logs/progress.csv")
         cleanrl_data = pd.read_csv("cleanrl_metrics.csv")
+        sac_data = pd.read_csv("sac_metrics.csv") # ✅ Load direct file
     except FileNotFoundError as e:
         print(f"Error loading data: {e}. Ensure all training scripts finished.")
         return
 
-    sb3_reward_col = 'custom/mean_episodic_return'
+    custom_reward_col = 'custom/mean_episodic_return'
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
     # --- Plot 1: Sample Efficiency (Math Check) ---
     ax1.plot(jax_data["Total_Steps"], jax_data["Mean_Reward"], label="JAX PPO (Native)", color="#2ca02c", linewidth=2)
-    ax1.plot(sb3_data["time/total_timesteps"], sb3_data[sb3_reward_col], label="Stable-Baselines3 (PyTorch)", color="#ff7f0e", linewidth=2)
-    ax1.plot(cleanrl_data["Total_Steps"], cleanrl_data["Mean_Reward"], label="CleanRL (PyTorch)", color="#1f77b4", linewidth=2, linestyle="--")
-    
+    ax1.plot(sb3_data["time/total_timesteps"], sb3_data[custom_reward_col], label="SB3 PPO (PyTorch)", color="#ff7f0e", linewidth=2)
+    ax1.plot(cleanrl_data["Total_Steps"], cleanrl_data["Mean_Reward"], label="CleanRL PPO (PyTorch)", color="#1f77b4", linewidth=2, linestyle="--")
+    ax1.plot(sac_data["Total_Steps"], sac_data["Mean_Reward"], label="SB3 SAC (PyTorch)", color="#9467bd", linewidth=2)    
     ax1.set_title("Sample Efficiency: Expected Return over Time")
     ax1.set_xlabel("Environment Steps")
     ax1.set_ylabel("Expected Return (Reward)")
@@ -30,9 +31,9 @@ def generate_plots():
     # --- Plot 2: Computational Efficiency (Hardware Check) ---
     ax2.plot(jax_data["Wall_Clock_Time"], jax_data["Mean_Reward"], label="JAX PPO (Native)", color="#2ca02c", linewidth=2)
     if 'time/time_elapsed' in sb3_data.columns:
-        ax2.plot(sb3_data["time/time_elapsed"], sb3_data[sb3_reward_col], label="Stable-Baselines3 (PyTorch)", color="#ff7f0e", linewidth=2)
-    ax2.plot(cleanrl_data["Wall_Clock_Time"], cleanrl_data["Mean_Reward"], label="CleanRL (PyTorch)", color="#1f77b4", linewidth=2, linestyle="--")
-
+        ax2.plot(sb3_data["time/time_elapsed"], sb3_data[custom_reward_col], label="SB3 PPO (PyTorch)", color="#ff7f0e", linewidth=2)
+    ax2.plot(cleanrl_data["Wall_Clock_Time"], cleanrl_data["Mean_Reward"], label="CleanRL PPO (PyTorch)", color="#1f77b4", linewidth=2, linestyle="--")
+    ax2.plot(sac_data["Wall_Clock_Time"], sac_data["Mean_Reward"], label="SB3 SAC (PyTorch)", color="#9467bd", linewidth=2)
     ax2.set_title("Computational Efficiency: Reward vs Wall-Clock Time")
     ax2.set_xlabel("Wall-Clock Time (Seconds)")
     ax2.set_ylabel("Expected Return (Reward)")
