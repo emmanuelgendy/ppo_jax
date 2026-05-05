@@ -100,4 +100,4 @@ Running `python run_suite.py` generates the following performance comparisons, h
 
 ![Benchmark Results GPU](benchmark_results_sb3_sac.png)
 
-*Figure 2: Benchmark results generated over 200 epochs simulating 2,048 parallel building environments. JAX Native PPO is run on GPU, and SAC (also in JAX) is added for comparison,*
+*Figure 2: Benchmark results generated over 200 epochs simulating 2,048 parallel building environments. JAX Native PPO is run on GPU, and SAC is added for comparison.*
