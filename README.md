@@ -1,88 +1,86 @@
-# EnergySim JAX PPO
+# EnergySim JAX RL Suite (PPO & SAC)
 
-A custom, high-performance Proximal Policy Optimization (PPO) agent implemented in pure JAX and Equinox, designed to control building energy simulations (PhyLFlex project) at massive scale.
+A custom, high-performance Reinforcement Learning suite implemented in pure JAX and Equinox, designed to control building energy simulations (PhyLFlex project) at massive scale. 
+
+Initially built around Proximal Policy Optimization (PPO), this repository has been expanded to include a native Continuous Soft Actor-Critic (SAC) implementation and a robust benchmarking suite comparing JAX-native performance against industry-standard PyTorch frameworks (CleanRL and Stable-Baselines3).
 
 This repository features a fully compiled, vector-parallel architecture (Anakin style) that leverages `@eqx.filter_jit` and `jax.vmap` to run thousands of environment steps per second on CPU/GPU.
 
-##  Project Architecture
+## 📂 Project Architecture
 
-To keep the reinforcement learning logic transparent and modular, the project is split into four core files:
+To keep the reinforcement learning logic transparent and modular, the project is split into algorithmic components and benchmarking wrappers:
 
+**PPO Engine (On-Policy)**
 * **`networks.py`**: Defines the Actor-Critic neural network architecture using Equinox.
 * **`rollout.py`**: Handles JAX-compiled environment interactions (`jax.lax.scan`) and memory collection.
 * **`loss.py`**: Contains the mathematics for Generalized Advantage Estimation (GAE) and the PPO Clipped Surrogate Objective.
-* **`train.py`**: The main execution engine. Ties the components together, compiles the training step, and uses Optax for network updates.
+* **`train.py`**: The main execution engine for PPO. 
 
-## Technical Notes & JAX Idioms
+**SAC Engine (Off-Policy)**
+* **`sac_networks.py`**: Defines the Squashed Gaussian Actor and Twin-Q networks.
+* **`sac_buffer.py`**: A JAX-optimized `VectorReplayBuffer` utilizing `jax.lax.dynamic_update_slice` for ultra-fast memory allocation.
+* **`train_sac_jax.py`**: The execution engine for SAC, handling Polyak averaging and automatic entropy tuning.
 
-Building reinforcement learning algorithms in pure JAX requires specific architectural patterns to satisfy the compiler's strict linear algebra and memory rules. If you are modifying this code, keep the following in mind:
+**Benchmarking Suite**
+* **`benchmark_cleanrl.py` / `benchmark_sb3.py`**: PyTorch baselines using Gymnasium wrappers.
+* **`run_suite.py`**: Master script to execute all algorithms sequentially.
+* **`plot_benchmark.py`**: Generates smoothed, publication-ready sample and computational efficiency plots.
 
-* **The Tensor Hierarchy:** This project uses an "Anakin-style" vectorization pattern. Memory buffers and trajectories are strictly structured as 2D matrices of shape `(Time, Environments)`. 
-* **Nested Vectorization:** To evaluate a batch of historical memories `(Time, Env, Features)` through the policy network, we utilize nested vectorization (`jax.vmap(jax.vmap(policy))`). This beautifully maps over the Time dimension, and then over the Environment dimension, feeding the exact 1D feature vector the linear layers expect while computing the entire batch simultaneously.
-* **Partial Application for Static Variables:** The `jax.lax.scan` loop used for environment rollouts only accepts dynamic carry states and sequence inputs. To pass static configuration variables (like `room_indices`) into the vectorized observation extractor, we use partial function application (Lambda wrappers) in `train.py` before compiling.
-* **Equinox PyTrees:** In `networks.py`, activation functions (like `jax.nn.tanh`) must be applied directly in the `__call__` forward pass, rather than stored as class attributes in `__init__`. This prevents the JAX compiler from attempting (and failing) to flatten functions into tensor arrays during gradient tracing.
+## 🧠 Technical Notes & JAX Idioms
 
+Building reinforcement learning algorithms in pure JAX requires specific architectural patterns to satisfy the compiler's strict linear algebra and memory rules:
 
-## Getting Started
+* **The Tensor Hierarchy:** Memory buffers and trajectories are strictly structured as 2D matrices of shape `(Time, Environments)`. 
+* **Nested Vectorization:** To evaluate a batch of historical memories `(Time, Env, Features)` through the policy network, we utilize nested vectorization (`jax.vmap(jax.vmap(policy))`). This beautifully maps over the Time dimension, and then over the Environment dimension simultaneously.
+* **Pre-allocated Buffers:** Unlike PyTorch lists, the SAC `VectorReplayBuffer` allocates maximum memory upfront and strictly enforces `dtype` matching (e.g., casting boolean `done` flags to `float32` before insertion) to remain JIT-compatible.
+* **Equinox PyTrees & Polyak Averaging:** When performing soft updates for Target Q-Networks, the `jax.tree_util.tree_map` function is wrapped with an `eqx.is_array` filter to update network weights while safely ignoring static functions (like `jax.nn.relu` and its `custom_jvp`).
+
+## 🚀 Getting Started
 
 ### 1. Clone the Repository
 ```bash
 git clone [https://github.com/](https://github.com/)[YOUR_USERNAME]/energysim-jax-ppo.git
 cd energysim-jax-ppo
-
 ```
+
 ### 2. Set Up the Virtual Environment
 
 It is highly recommended to run this project inside an isolated Python virtual environment.
 
 ```bash
-# Create the virtual environment
 python3 -m venv venv
-
-# Activate it (Linux/macOS)
 source venv/bin/activate
 ```
+
 ### 3. Install Dependencies
 
-This project uses a requirements.txt file which installs core machine learning libraries (JAX, Equinox, Optax) and pulls the custom EnergySim simulator directly from its source GitHub repository.
+This project uses a requirements.txt file which installs core machine learning libraries (JAX, Equinox, Optax, PyTorch, Stable-Baselines3).
 
 ```bash
-# Install all required packages
 pip install -r requirements.txt
 ```
+
 ### 4. Add the Data File
 
 Because EnergySim does not package its example data sets during installation, you must manually place the sample_data.csv file into the root directory of this project before running.
 
-Ensure your directory looks exactly like this:
+## 🏃 Running the Engines
 
-```
-networks.py
-rollout.py
-loss.py
-train.py
-requirements.txt
-sample_data.csv (Required)
-```
-## Running the Training Engine
+Once your environment is active and the data file is in place, you can run individual training algorithms:
 
-Once your environment is active and the data file is in place, you can start the training loop:
+Run Native JAX PPO:
 ```bash
 python train.py
 ```
 
-### What to expect:
-
-1. Initialization: The script will initialize the vectorized environments and neural networks.
-2. Compilation: The very first epoch will take several seconds as the JAX compiler (@eqx.filter_jit) translates the Python training loop into optimized machine code.
-3. Execution: Epoch 2 and onwards will run in milliseconds, printing the Frames Per Second (FPS) and Loss metrics to the terminal.
-4. Saving: Upon completion, the trained policy weights will be saved locally as jax_ppo_model.eqx.
-
-## Running Tests
-
-To verify that the JAX compiler, the environment wrapper, and the PPO math are functioning correctly without running a full 200-epoch training session, you can run a quick diagnostic test by overriding the epochs:
+Run Native JAX SAC:
 ```bash
-# To test if the pipeline compiles and runs successfully:
-sed -i 's/EPOCHS = 200/EPOCHS = 2/g' train.py && python train.py
+python train_sac_jax.py
 ```
-_(Note: Remember to change EPOCHS back to 200 in train.py for actual training runs!)_
+
+Run the Full Benchmark Suite:
+This will sequentially train the JAX models, followed by the PyTorch (CleanRL/SB3) models, and automatically generate a comparison plot (benchmark_results_smoothed.png).
+
+```bash
+python run_suite.py
+```
