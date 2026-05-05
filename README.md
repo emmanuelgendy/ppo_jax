@@ -84,3 +84,20 @@ This will sequentially train the JAX models, followed by the PyTorch (CleanRL/SB
 ```bash
 python run_suite.py
 ```
+
+## 📊 Performance Benchmarks
+
+This repository includes an automated benchmarking suite to compare the native JAX implementations against industry-standard PyTorch libraries (Stable-Baselines3 and CleanRL). 
+
+Running `python run_suite.py` generates the following performance comparisons, highlighting two critical dimensions of Reinforcement Learning in thermodynamic environments:
+
+1. **Sample Efficiency (Expected Return vs. Steps):** Demonstrates how quickly the agents learn the building physics. Notice the stability of On-Policy PPO compared to the early-exploration Q-value overestimation typical of Off-Policy SAC.
+2. **Computational Efficiency (Expected Return vs. Wall-Clock Time):** Showcases the massive speedup achieved by leveraging JAX's `vmap` and `@eqx.filter_jit`. The fully compiled "Anakin-style" architecture simulates thousands of environments in a fraction of the time required by standard Python multiprocessing.
+
+![Benchmark Results CPU](benchmark_results_cpu.png)
+
+*Figure 1: Benchmark results generated over 200 epochs simulating 2,048 parallel building environments. JAX Native PPO is run on CPU,*
+
+![Benchmark Results GPU](benchmark_results_sb3_sac.png)
+
+*Figure 2: Benchmark results generated over 200 epochs simulating 2,048 parallel building environments. JAX Native PPO is run on GPU, and SAC (also in JAX) is added for comparison,*
