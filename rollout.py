@@ -44,11 +44,14 @@ def create_rollout_function(env, num_envs, rollout_steps, extract_obs_fn, map_ac
             phys_actions = map_actions_fn(action, num_envs)
             next_env_state, reward, done, _ = env.step(env_state, phys_actions)
             
+            # Divide by 100 so the Critic network can handle the math without exploding
+            scaled_reward = reward / 100.0
+            
             # Save memory into our JAX-friendly NamedTuple
             transition = Transition(
                 obs=obs, 
                 action=action, 
-                reward=reward, 
+                reward=scaled_reward,   # <-- Use the scaled reward here!
                 value=value, 
                 log_prob=log_prob, 
                 done=done.astype(jnp.float32)
