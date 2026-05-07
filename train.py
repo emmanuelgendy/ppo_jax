@@ -29,8 +29,8 @@ import energysim.sim.simulator as sim_module
 
 NUM_ENVS = 2048
 ROLLOUT_STEPS = 64
-EPOCHS = 200 # Set back to 200 for full benchmarking
-LEARNING_RATE = 3e-4
+EPOCHS = 1000 # Set back to 200 for full benchmarking
+LEARNING_RATE = 5e-5 # 3e-4
 
 def map_actions(norm_actions, n_envs, n_rooms):
     from energysim.core.shared.data_structs import SystemActions
@@ -53,7 +53,7 @@ def train():
     dataset_path = "heeten_training_master.csv"
     dataset = SimulationDataset(file_path=dataset_path, dt_seconds=900)
     sim = JAXSimulator(
-        dt_seconds=900, t_config=t_config, r_config=RewardConfig(price_weight=1.0, comfort_weight=5.0),
+        dt_seconds=900, t_config=t_config, r_config=RewardConfig(price_weight=1.0, comfort_weight=20.0),
         b_config=BatteryConfig(), hp_config=HeatPumpConfig(), ac_config=AirConditionerConfig(), 
         ts_config=ThermalStorageConfig(), pv_config=PVConfig()
     )
