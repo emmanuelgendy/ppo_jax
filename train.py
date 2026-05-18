@@ -20,7 +20,9 @@ from energysim.rl.vector_env import VectorizedEnergyEnv
 from energysim.core.shared.data_structs import (
     BatteryConfig, RewardConfig, HeatPumpConfig, AirConditionerConfig, 
     ThermalStorageConfig, PVConfig
+    
 )
+from energysim.core.shared.data_structs import SystemActions
 from energysim.rl.helpers import extract_obs
 from examples.build_my_house import create_2_room_house
 import energysim.sim.simulator as sim_module
@@ -30,14 +32,17 @@ import energysim.sim.simulator as sim_module
 NUM_ENVS = 2048
 ROLLOUT_STEPS = 64
 EPOCHS = 1000 # Set back to 200 for full benchmarking
-LEARNING_RATE = 5e-5 # 3e-4
+LEARNING_RATE = 3e-4
 
 def map_actions(norm_actions, n_envs, n_rooms):
-    from energysim.core.shared.data_structs import SystemActions
+    # Setting battery to 0.0 to isolate the Heat Pump as requested
+    bat_w = jnp.zeros((n_envs,)) 
+    hp_w = (norm_actions[:, 1:1+n_rooms] + 1.0) 
     return SystemActions(
-        battery_power_w=norm_actions[:, 0] * 3000.0,
-        heat_pump_power_w=(norm_actions[:, 1:1+n_rooms] + 1.0) * 1000.0,
-        ac_power_w=jnp.zeros((n_envs, n_rooms)), storage_discharge_w=jnp.zeros((n_envs, n_rooms))
+        battery_power_w=bat_w, 
+        heat_pump_power_w=hp_w,
+        ac_power_w=jnp.zeros((n_envs, n_rooms)), 
+        storage_discharge_w=jnp.zeros((n_envs, n_rooms))
     )
 
 def train():
@@ -50,10 +55,10 @@ def train():
         orig_hp = sim_module.create_heat_pump
         sim_module.create_heat_pump = lambda cfg, n: orig_hp(cfg, n_rooms)
 
-    dataset_path = "heeten_training_master.csv"
+    dataset_path =  "/home/emmanuel-gendy/Downloads/sample_data.csv"
     dataset = SimulationDataset(file_path=dataset_path, dt_seconds=900)
     sim = JAXSimulator(
-        dt_seconds=900, t_config=t_config, r_config=RewardConfig(price_weight=1.0, comfort_weight=20.0),
+        dt_seconds=900, t_config=t_config, r_config=RewardConfig(price_weight=0.01, comfort_weight=10.0),
         b_config=BatteryConfig(), hp_config=HeatPumpConfig(), ac_config=AirConditionerConfig(), 
         ts_config=ThermalStorageConfig(), pv_config=PVConfig()
     )
@@ -64,10 +69,13 @@ def train():
     key, net_key, env_key = jax.random.split(key, 3)
     
     obs_dim = n_rooms + 5
-    action_dim = 1 + n_rooms
-    policy = PPOPolicy(obs_dim, action_dim, hidden_dim=64, key=net_key)
-    
-    optimizer = optax.adam(LEARNING_RATE)
+    action_dim = 1 + n_rooms  # This equals 3
+    policy = PPOPolicy(n_rooms + 5, action_dim, 64, jax.random.PRNGKey(0))
+
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(0.5),  # The Surge Protector
+        optax.adam(LEARNING_RATE)
+    )
     opt_state = optimizer.init(eqx.filter(policy, eqx.is_array))
     env_state = env.reset(env_key)
     
@@ -103,19 +111,23 @@ def train():
         updates, new_opt_state = optimizer.update(grads, opt_state, policy)
         new_policy = eqx.apply_updates(policy, updates)
         
-        return new_policy, next_env_state, new_opt_state, next_key, metrics, loss, mean_episodic_return
-
+        # Change this line at the end of update_step:
+        return new_policy, next_env_state, new_opt_state, next_key, metrics, loss, mean_batch_reward, mean_episodic_return
+    
     print("--- [JAX] 4. Starting Training ---")
     with open("jax_metrics.csv", mode="w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["Epoch", "Total_Steps", "Wall_Clock_Time", "FPS", "Mean_Reward"])
-        
+        # Added the Return column here:
+        writer.writerow(["Epoch", "Total_Steps", "Wall_Clock_Time", "FPS", "Mean_Step_Reward", "Mean_Episodic_Return"])
+
         global_start_time = time.time()
         total_steps = 0
         
         for epoch in range(EPOCHS):
             epoch_start_time = time.time()
-            policy, env_state, opt_state, key, metrics, loss, mean_batch_reward = update_step(policy, env_state, opt_state, key)
+            
+            # Unpack BOTH step_reward and episodic_return
+            policy, env_state, opt_state, key, metrics, loss, step_reward, episodic_return = update_step(policy, env_state, opt_state, key)
             
             step_time = time.time() - epoch_start_time
             wall_clock_time = time.time() - global_start_time
@@ -123,8 +135,11 @@ def train():
             total_steps += (NUM_ENVS * ROLLOUT_STEPS)
             
             actor_loss, critic_loss, entropy = metrics
-            print(f"Epoch {epoch+1:03d}/{EPOCHS} | FPS: {fps:,.0f} | Reward: {mean_batch_reward:.4f} | Loss: {loss:.4f}")
-            writer.writerow([epoch + 1, total_steps, wall_clock_time, fps, float(mean_batch_reward)])
+            
+            # Print and log both
+            print(f"Epoch {epoch+1:03d}/{EPOCHS} | FPS: {fps:,.0f} | Reward/Step: {step_reward:.4f} | Return/Ep: {episodic_return:.4f} | Loss: {loss:.4f}")
+            writer.writerow([epoch + 1, total_steps, wall_clock_time, fps, float(step_reward), float(episodic_return)])
+
 
     eqx.tree_serialise_leaves("jax_ppo_model.eqx", policy)
     print("✨ Model saved to jax_ppo_model.eqx")
