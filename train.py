@@ -2,7 +2,29 @@ import os
 import time
 import sys
 import csv
-sys.path.append("/home/emmanuel-gendy/Documents/EnergySim")
+sys.path.append("/home/emmanuel-gendy/Documents/EnergySim/examples")
+
+import energysim.utils.objectives as obj
+if hasattr(obj, 'f_stage_cost'):
+    _original_f_stage_cost = obj.f_stage_cost
+    
+    def _cost_translator(*args, **kwargs):
+        # 1. Translate keywords to satisfy the refactored function
+        if 'state' in kwargs: kwargs['current_state'] = kwargs.pop('state')
+        if 'action' in kwargs: kwargs['actions'] = kwargs.pop('action')
+        if 'dt' in kwargs: kwargs['dt_seconds'] = kwargs.pop('dt')
+        if 'next_state' not in kwargs and len(args) < 2: kwargs['next_state'] = None
+            
+        # 2. Get the baseline electricity bill
+        financial_cost = _original_f_stage_cost(*args, **kwargs)
+        
+        # 3. FIX THE REWARD HACKING: Inject the missing Comfort Penalty
+        c_state = kwargs.get('current_state')
+        confs = kwargs.get('configs')
+                    
+        return financial_cost
+
+    obj.f_cost_step = _cost_translator
 
 import jax
 import jax.numpy as jnp
@@ -24,7 +46,7 @@ from energysim.core.shared.data_structs import (
 )
 from energysim.core.shared.data_structs import SystemActions
 from energysim.rl.helpers import extract_obs
-from examples.build_my_house import create_2_room_house
+from build_my_house import create_2_room_house
 import energysim.sim.simulator as sim_module
 
 # os.environ["JAX_PLATFORM_NAME"] = "cpu"
@@ -35,9 +57,12 @@ EPOCHS = 1000 # Set back to 200 for full benchmarking
 LEARNING_RATE = 3e-4
 
 def map_actions(norm_actions, n_envs, n_rooms):
-    # Setting battery to 0.0 to isolate the Heat Pump as requested
-    bat_w = jnp.zeros((n_envs,)) 
-    hp_w = (norm_actions[:, 1:1+n_rooms] + 1.0) 
+    # Allow battery to control the bill [-5000W, +5000W]
+    bat_w = norm_actions[:, 0] * 5000.0 
+    
+    # FORCE HEAT PUMP TO ZERO - The agent cannot touch it
+    hp_w = jnp.zeros((n_envs, n_rooms)) 
+    
     return SystemActions(
         battery_power_w=bat_w, 
         heat_pump_power_w=hp_w,
@@ -69,7 +94,7 @@ def train():
     key, net_key, env_key = jax.random.split(key, 3)
     
     obs_dim = n_rooms + 5
-    action_dim = 1 + n_rooms  # This equals 3
+    action_dim = 1 + n_rooms 
     policy = PPOPolicy(n_rooms + 5, action_dim, 64, jax.random.PRNGKey(0))
 
     optimizer = optax.chain(
